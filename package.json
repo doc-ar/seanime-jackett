@@ -1,0 +1,13 @@
+{
+    "name": "jackett-provider",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "build": "tsc",
+        "watch": "tsc --watch",
+        "bundle": "node bundle.mjs"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.0"
+    }
+}

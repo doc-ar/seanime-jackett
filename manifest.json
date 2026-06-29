@@ -1,0 +1,35 @@
+{
+    "id": "jackett-provider",
+    "name": "Jackett Provider",
+    "version": "0.1.0",
+    "type": "anime-torrent-provider",
+    "language": "javascript",
+    "author": "docar",
+    "description": "Searches anime torrents via a local Jackett instance.",
+    "isDevelopment": true,
+    "payloadURI": "/home/docar/apps/seanime/jackett-provider/dist/main.js",
+    "userConfig": {
+        "requiresConfig": true,
+        "version": 1,
+        "fields": [
+            {
+                "name": "jackettUrl",
+                "label": "Jackett URL",
+                "type": "text",
+                "default": "http://localhost:9117"
+            },
+            {
+                "name": "jackettApiKey",
+                "label": "Jackett API Key",
+                "type": "text",
+                "default": ""
+            },
+            {
+                "name": "indexers",
+                "label": "Indexers (comma-separated IDs, or 'all')",
+                "type": "text",
+                "default": "all"
+            }
+        ]
+    }
+}
