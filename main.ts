@@ -21,22 +21,7 @@ class Provider {
     }
 
     async smartSearch(opts: AnimeSmartSearchOptions): Promise<AnimeTorrent[]> {
-        const allTitles = [
-            opts.media.romajiTitle,
-            opts.media.englishTitle || "",
-            ...(opts.media.synonyms || []),
-        ].filter(Boolean)
-
-        const { titles, season, part } = $scannerUtils.buildSmartSearchTitles(allTitles)
-        const baseTitle = titles[0] || opts.media.romajiTitle
-
-        let query = baseTitle
-        if (season > 1) {
-            query = $scannerUtils.buildSeasonQuery(baseTitle, season)
-        }
-        if (part > 1) {
-            query = $scannerUtils.buildPartQuery(baseTitle, part)
-        }
+        const query = opts.query || this.buildQuery(opts)
 
         if (opts.batch) {
             const results = await this.fetchJackett(query)
@@ -49,15 +34,31 @@ class Provider {
                 })
         }
 
+        let epQuery = query
         if (opts.episodeNumber > 0) {
             const ep = String(opts.episodeNumber).padStart(2, "0")
-            query = `${$scannerUtils.sanitizeQuery(query)} ${ep}`
+            epQuery = `${query} ${ep}`
         }
 
-        const results = await this.fetchJackett(query)
+        const results = await this.fetchJackett(epQuery)
         return results
             .filter(r => this.matchesResolution(r.Title, opts.resolution))
             .map(r => this.toAnimeTorrent(r))
+    }
+
+    private buildQuery(opts: AnimeSmartSearchOptions): string {
+        const allTitles = [
+            opts.media.romajiTitle,
+            opts.media.englishTitle || "",
+            ...(opts.media.synonyms || []),
+        ].filter(Boolean)
+
+        const { titles, season, part } = $scannerUtils.buildSmartSearchTitles(allTitles)
+        const baseTitle = titles[0] || opts.media.romajiTitle
+
+        if (season > 1) return `${baseTitle} Season ${season}`
+        if (part > 1) return `${baseTitle} Part ${part}`
+        return baseTitle
     }
 
     async getTorrentInfoHash(torrent: AnimeTorrent): Promise<string> {
