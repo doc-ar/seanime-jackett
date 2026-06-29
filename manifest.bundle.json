@@ -1,0 +1,35 @@
+{
+    "id": "jackett-provider",
+    "name": "Jackett Provider",
+    "version": "0.1.0",
+    "type": "anime-torrent-provider",
+    "language": "javascript",
+    "author": "docar",
+    "description": "Searches anime torrents via a local Jackett instance.",
+    "manifestURI": "https://raw.githubusercontent.com/doc-ar/seanime-jackett/main/manifest.bundle.json",
+    "userConfig": {
+        "requiresConfig": true,
+        "version": 1,
+        "fields": [
+            {
+                "name": "jackettUrl",
+                "label": "Jackett URL",
+                "type": "text",
+                "default": "http://localhost:9117"
+            },
+            {
+                "name": "jackettApiKey",
+                "label": "Jackett API Key",
+                "type": "text",
+                "default": ""
+            },
+            {
+                "name": "indexers",
+                "label": "Indexers (comma-separated IDs, or 'all')",
+                "type": "text",
+                "default": "all"
+            }
+        ]
+    },
+    "payload": "/// <reference path=\"./anime-torrent-provider.d.ts\" />\n/// <reference path=\"./core.d.ts\" />\nclass Provider {\n    constructor() {\n        this.jackettUrl = \"{{jackettUrl}}\";\n        this.jackettApiKey = \"{{jackettApiKey}}\";\n        this.indexers = \"{{indexers}}\";\n    }\n    getSettings() {\n        return {\n            canSmartSearch: true,\n            smartSearchFilters: [\"batch\", \"episodeNumber\", \"resolution\", \"query\"],\n            supportsAdult: false,\n            type: \"main\",\n        };\n    }\n    async search(opts) {\n        const results = await this.fetchJackett(opts.query);\n        return results.map(r => this.toAnimeTorrent(r));\n    }\n    async smartSearch(opts) {\n        const allTitles = [\n            opts.media.romajiTitle,\n            opts.media.englishTitle || \"\",\n            ...opts.media.synonyms,\n        ].filter(Boolean);\n        const { titles, season, part } = $scannerUtils.buildSmartSearchTitles(allTitles);\n        const baseTitle = titles[0] || opts.media.romajiTitle;\n        let query = baseTitle;\n        if (season > 1) {\n            query = $scannerUtils.buildSeasonQuery(baseTitle, season);\n        }\n        if (part > 1) {\n            query = $scannerUtils.buildPartQuery(baseTitle, part);\n        }\n        if (opts.batch) {\n            const results = await this.fetchJackett(query);\n            return results\n                .filter(r => this.matchesResolution(r.Title, opts.resolution))\n                .map(r => {\n                const t = this.toAnimeTorrent(r);\n                t.isBatch = true;\n                return t;\n            });\n        }\n        if (opts.episodeNumber > 0) {\n            const ep = String(opts.episodeNumber).padStart(2, \"0\");\n            query = `${$scannerUtils.sanitizeQuery(query)} ${ep}`;\n        }\n        const results = await this.fetchJackett(query);\n        return results\n            .filter(r => this.matchesResolution(r.Title, opts.resolution))\n            .map(r => this.toAnimeTorrent(r));\n    }\n    async getTorrentInfoHash(torrent) {\n        return torrent.infoHash || \"\";\n    }\n    async getTorrentMagnetLink(torrent) {\n        return torrent.magnetLink || \"\";\n    }\n    async getLatest() {\n        const results = await this.fetchJackett(\"anime\");\n        return results.map(r => this.toAnimeTorrent(r));\n    }\n    async fetchJackett(query) {\n        const baseUrl = this.jackettUrl.replace(/\\/$/, \"\");\n        const indexer = (this.indexers || \"all\").trim();\n        const url = `${baseUrl}/api/v2.0/indexers/${indexer}/results?apikey=${encodeURIComponent(this.jackettApiKey)}&Query=${encodeURIComponent(query)}&Category[]=5070`;\n        console.log(`[jackett-provider] GET ${url}`);\n        const response = await fetch(url);\n        if (!response.ok) {\n            throw new Error(`Jackett request failed: ${response.status} ${response.statusText}`);\n        }\n        const data = response.json();\n        return data.Results || [];\n    }\n    // resolution from opts is e.g. \"1080\" or \"720\" (no trailing p)\n    matchesResolution(title, resolution) {\n        if (!resolution || resolution === \"\")\n            return true;\n        return title.includes(resolution);\n    }\n    toAnimeTorrent(r) {\n        const leechers = (r.Peers || 0) - (r.Seeders || 0);\n        const parsed = $habari.parse(r.Title);\n        return {\n            name: r.Title,\n            date: r.PublishDate || new Date().toISOString(),\n            size: r.Size || 0,\n            formattedSize: \"\",\n            seeders: r.Seeders || 0,\n            leechers: leechers > 0 ? leechers : 0,\n            downloadCount: r.Grabs || 0,\n            link: r.Details || r.Guid || \"\",\n            downloadUrl: r.Link || \"\",\n            magnetLink: r.MagnetUri || \"\",\n            infoHash: r.InfoHash || \"\",\n            resolution: parsed.video_resolution || \"\",\n            isBatch: false,\n            episodeNumber: this.parseEpisodeNumber(parsed),\n            releaseGroup: parsed.release_group || \"\",\n            isBestRelease: false,\n            confirmed: false,\n        };\n    }\n    parseEpisodeNumber(parsed) {\n        if (parsed.episode_number && parsed.episode_number.length > 0) {\n            const n = parseInt(parsed.episode_number[0], 10);\n            if (!isNaN(n) && n > 0)\n                return n;\n        }\n        return -1;\n    }\n}\n"
+}
