@@ -24,7 +24,7 @@ class Provider {
         const allTitles = [
             opts.media.romajiTitle,
             opts.media.englishTitle || "",
-            ...opts.media.synonyms,
+            ...(opts.media.synonyms || []),
         ].filter(Boolean)
 
         const { titles, season, part } = $scannerUtils.buildSmartSearchTitles(allTitles)
@@ -85,7 +85,7 @@ class Provider {
             throw new Error(`Jackett request failed: ${response.status} ${response.statusText}`)
         }
 
-        const data: JackettResponse = response.json<JackettResponse>()
+        const data: JackettResponse = await (response.json<JackettResponse>() as any)
         return data.Results || []
     }
 
