@@ -26,12 +26,8 @@ class Provider {
         if (opts.batch) {
             const results = await this.fetchJackett(query)
             return results
-                .filter(r => this.matchesResolution(r.Title, opts.resolution))
-                .map(r => {
-                    const t = this.toAnimeTorrent(r)
-                    t.isBatch = true
-                    return t
-                })
+                .map(r => this.toAnimeTorrent(r))
+                .filter(t => t.isBatch && this.matchesResolutionStr(t.resolution, opts.resolution))
         }
 
         let epQuery = query
@@ -42,8 +38,8 @@ class Provider {
 
         const results = await this.fetchJackett(epQuery)
         return results
-            .filter(r => this.matchesResolution(r.Title, opts.resolution))
             .map(r => this.toAnimeTorrent(r))
+            .filter(t => this.matchesResolutionStr(t.resolution, opts.resolution))
     }
 
     private buildQuery(opts: AnimeSmartSearchOptions): string {
@@ -90,15 +86,34 @@ class Provider {
         return data.Results || []
     }
 
-    // resolution from opts is e.g. "1080" or "720" (no trailing p)
-    private matchesResolution(title: string, resolution: string): boolean {
-        if (!resolution || resolution === "") return true
-        return title.includes(resolution)
+    // opts resolution is e.g. "1080" or "720" (no trailing p); torrent resolution may be "1080p"
+    private matchesResolutionStr(torrentRes: string, filterRes: string): boolean {
+        if (!filterRes || filterRes === "") return true
+        if (!torrentRes || torrentRes === "") return true  // unknown resolution — don't filter out
+        return torrentRes.includes(filterRes)
+    }
+
+    private detectBatch(r: JackettResult, parsed: $habari.Metadata): boolean {
+        // Explicit batch keywords in title
+        if (/\b(batch|complete series|complete pack|full series)\b/i.test(r.Title)) return true
+
+        // Habari parsed an episode range: episode_number="01", other_episode_number="12"
+        if (parsed.other_episode_number && parsed.other_episode_number.length > 0) return true
+
+        // Episode range pattern directly in title: "01-12", "01~12", "E01-E12"
+        if (/\b\d{1,3}[-~]\d{1,3}\b/.test(r.Title)) return true
+
+        // No episode number at all — likely a full season pack if reasonably large (>1 GB)
+        const hasEpisode = parsed.episode_number && parsed.episode_number.length > 0
+        if (!hasEpisode && r.Size > 1_073_741_824) return true
+
+        return false
     }
 
     private toAnimeTorrent(r: JackettResult): AnimeTorrent {
         const leechers = (r.Peers || 0) - (r.Seeders || 0)
         const parsed = $habari.parse(r.Title)
+        const isBatch = this.detectBatch(r, parsed)
         return {
             name: r.Title,
             date: r.PublishDate || new Date().toISOString(),
@@ -112,8 +127,8 @@ class Provider {
             magnetLink: r.MagnetUri || "",
             infoHash: r.InfoHash || "",
             resolution: parsed.video_resolution || "",
-            isBatch: false,
-            episodeNumber: this.parseEpisodeNumber(parsed),
+            isBatch,
+            episodeNumber: isBatch ? -1 : this.parseEpisodeNumber(parsed),
             releaseGroup: parsed.release_group || "",
             isBestRelease: false,
             confirmed: false,
